@@ -6,9 +6,9 @@
  to you under the Apache License, Version 2.0 (the
  "License"); you may not use this file except in compliance
  with the License.  You may obtain a copy of the License at
-
+ 
  http://www.apache.org/licenses/LICENSE-2.0
-
+ 
  Unless required by applicable law or agreed to in writing,
  software distributed under the License is distributed on an
  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -31,7 +31,7 @@
 #import <objc/message.h>
 
 #ifndef __CORDOVA_4_0_0
-    #import <Cordova/NSData+Base64.h>
+#import <Cordova/NSData+Base64.h>
 #endif
 
 #define CDV_PHOTO_PREFIX @"cdv_photo_"
@@ -62,7 +62,7 @@ static NSString* toBase64(NSData* data) {
 + (instancetype) createFromTakePictureArguments:(CDVInvokedUrlCommand*)command
 {
     CDVPictureOptions* pictureOptions = [[CDVPictureOptions alloc] init];
-
+    
     pictureOptions.quality = [command argumentAtIndex:0 withDefault:@(50)];
     pictureOptions.destinationType = [[command argumentAtIndex:1 withDefault:@(DestinationTypeFileUri)] unsignedIntegerValue];
     pictureOptions.sourceType = [[command argumentAtIndex:2 withDefault:@(UIImagePickerControllerSourceTypeCamera)] unsignedIntegerValue];
@@ -73,7 +73,7 @@ static NSString* toBase64(NSData* data) {
     if ((targetWidth != nil) && (targetHeight != nil)) {
         pictureOptions.targetSize = CGSizeMake([targetWidth floatValue], [targetHeight floatValue]);
     }
-
+    
     pictureOptions.encodingType = [[command argumentAtIndex:5 withDefault:@(EncodingTypeJPEG)] unsignedIntegerValue];
     pictureOptions.mediaType = [[command argumentAtIndex:6 withDefault:@(MediaTypePicture)] unsignedIntegerValue];
     pictureOptions.allowsEditing = [[command argumentAtIndex:7 withDefault:@(NO)] boolValue];
@@ -133,7 +133,7 @@ static NSString* toBase64(NSData* data) {
 - (BOOL)popoverSupported
 {
     return (NSClassFromString(@"UIPopoverController") != nil) &&
-           (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
+    (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
 }
 
 - (void)takePicture:(CDVInvokedUrlCommand*)command
@@ -141,7 +141,7 @@ static NSString* toBase64(NSData* data) {
     self.hasPendingOperation = YES;
     
     __weak CDVCamera* weakSelf = self;
-
+    
     [self.commandDelegate runInBackground:^{
         
         CDVPictureOptions* pictureOptions = [CDVPictureOptions createFromTakePictureArguments:command];
@@ -156,7 +156,7 @@ static NSString* toBase64(NSData* data) {
             [weakSelf.commandDelegate sendPluginResult:result callbackId:command.callbackId];
             return;
         }
-
+        
         // Validate the app has permission to access the camera
         if (pictureOptions.sourceType == UIImagePickerControllerSourceTypeCamera && [AVCaptureDevice respondsToSelector:@selector(authorizationStatusForMediaType:)]) {
             AVAuthorizationStatus authStatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
@@ -166,22 +166,53 @@ static NSString* toBase64(NSData* data) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wtautological-pointer-compare"
                 NSString* settingsButton = (&UIApplicationOpenSettingsURLString != NULL)
-                    ? NSLocalizedString(@"Settings", nil)
-                    : nil;
+                ? NSLocalizedString(@"Settings", nil)
+                : nil;
 #pragma clang diagnostic pop
-
+                
                 // Denied; show an alert
                 dispatch_async(dispatch_get_main_queue(), ^{
+                    
+#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_9_0
                     [[[UIAlertView alloc] initWithTitle:[[NSBundle mainBundle]
                                                          objectForInfoDictionaryKey:@"CFBundleDisplayName"]
                                                 message:NSLocalizedString(@"Access to the camera has been prohibited; please enable it in the Settings app to continue.", nil)
                                                delegate:weakSelf
                                       cancelButtonTitle:NSLocalizedString(@"OK", nil)
                                       otherButtonTitles:settingsButton, nil] show];
+#else
+                    
+                    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[[NSBundle mainBundle]
+                                                                                            objectForInfoDictionaryKey:@"CFBundleDisplayName"]
+                                                                                   message:NSLocalizedString(@"Access to the camera has been prohibited; please enable it in the Settings app to continue.", nil)
+                                                                            preferredStyle:UIAlertControllerStyleAlert];
+                    
+                    UIAlertAction *actionOk = [UIAlertAction actionWithTitle:@"Ok"
+                                                                       style:UIAlertActionStyleCancel
+                                                                     handler:^(UIAlertAction * action) {
+                                                                         [self alertViewClickedButtonAtIndex:0];
+                                                                     }];
+                    
+                    
+                    UIAlertAction *actionOther = [UIAlertAction actionWithTitle:settingsButton
+                                                                          style:UIAlertActionStyleDefault
+                                                                        handler:^(UIAlertAction * action) {
+                                                                            [self alertViewClickedButtonAtIndex:1];
+                                                                        }];
+                    
+                    [alert addAction:actionOk];
+                    [alert addAction:actionOther];
+                    
+                    [self.viewController presentViewController:alert
+                                                      animated:YES
+                                                    completion:nil];
+#endif
+                    
+                    
                 });
             }
         }
-
+        
         CDVCameraPicker* cameraPicker = [CDVCameraPicker createFromPictureOptions:pictureOptions];
         weakSelf.pickerController = cameraPicker;
         
@@ -198,7 +229,7 @@ static NSString* toBase64(NSData* data) {
                 [[[weakSelf pickerController] pickerPopoverController] setDelegate:nil];
                 [[weakSelf pickerController] setPickerPopoverController:nil];
             }
-
+            
             if ([weakSelf popoverSupported] && (pictureOptions.sourceType != UIImagePickerControllerSourceTypeCamera)) {
                 if (cameraPicker.pickerPopoverController == nil) {
                     cameraPicker.pickerPopoverController = [[NSClassFromString(@"UIPopoverController") alloc] initWithContentViewController:cameraPicker];
@@ -214,8 +245,14 @@ static NSString* toBase64(NSData* data) {
     }];
 }
 
+
 // Delegate for camera permission UIAlertView
+
+#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_9_0
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex
+#else
+- (void)alertViewClickedButtonAtIndex:(NSInteger)buttonIndex
+#endif
 {
     // If Settings button (on iOS 8), open the settings app
     if (buttonIndex == 1) {
@@ -226,14 +263,14 @@ static NSString* toBase64(NSData* data) {
         }
 #pragma clang diagnostic pop
     }
-
+    
     // Dismiss the view
     [[self.pickerController presentingViewController] dismissViewControllerAnimated:YES completion:nil];
-
+    
     CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"has no access to camera"];   // error callback expects string ATM
-
+    
     [self.commandDelegate sendPluginResult:result callbackId:self.pickerController.callbackId];
-
+    
     self.hasPendingOperation = NO;
     self.pickerController = nil;
 }
@@ -241,16 +278,16 @@ static NSString* toBase64(NSData* data) {
 - (void)repositionPopover:(CDVInvokedUrlCommand*)command
 {
     NSDictionary* options = [command argumentAtIndex:0 withDefault:nil];
-
+    
     [self displayPopover:options];
 }
 
 - (NSInteger)integerValueForKey:(NSDictionary*)dict key:(NSString*)key defaultValue:(NSInteger)defaultValue
 {
     NSInteger value = defaultValue;
-
+    
     NSNumber* val = [dict valueForKey:key];  // value is an NSNumber
-
+    
     if (val != nil) {
         value = [val integerValue];
     }
@@ -264,7 +301,7 @@ static NSString* toBase64(NSData* data) {
     NSInteger width = 320;
     NSInteger height = 480;
     UIPopoverArrowDirection arrowDirection = UIPopoverArrowDirectionAny;
-
+    
     if (options) {
         x = [self integerValueForKey:options key:@"x" defaultValue:0];
         y = [self integerValueForKey:options key:@"y" defaultValue:32];
@@ -275,12 +312,12 @@ static NSString* toBase64(NSData* data) {
             arrowDirection = UIPopoverArrowDirectionAny;
         }
     }
-
+    
     [[[self pickerController] pickerPopoverController] setDelegate:self];
     [[[self pickerController] pickerPopoverController] presentPopoverFromRect:CGRectMake(x, y, width, height)
-                                                                 inView:[self.webView superview]
-                                               permittedArrowDirections:arrowDirection
-                                                               animated:YES];
+                                                                       inView:[self.webView superview]
+                                                     permittedArrowDirections:arrowDirection
+                                                                     animated:YES];
 }
 
 - (void)navigationController:(UINavigationController *)navigationController willShowViewController:(UIViewController *)viewController animated:(BOOL)animated
@@ -300,13 +337,13 @@ static NSString* toBase64(NSData* data) {
     NSFileManager* fileMgr = [[NSFileManager alloc] init];
     NSError* err = nil;
     BOOL hasErrors = NO;
-
+    
     // clear contents of NSTemporaryDirectory
     NSString* tempDirectoryPath = NSTemporaryDirectory();
     NSDirectoryEnumerator* directoryEnumerator = [fileMgr enumeratorAtPath:tempDirectoryPath];
     NSString* fileName = nil;
     BOOL result;
-
+    
     while ((fileName = [directoryEnumerator nextObject])) {
         // only delete the files we created
         if (![fileName hasPrefix:CDV_PHOTO_PREFIX]) {
@@ -319,7 +356,7 @@ static NSString* toBase64(NSData* data) {
             hasErrors = YES;
         }
     }
-
+    
     CDVPluginResult* pluginResult;
     if (hasErrors) {
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_IO_EXCEPTION messageAsString:@"One or more files failed to be deleted."];
@@ -332,7 +369,7 @@ static NSString* toBase64(NSData* data) {
 - (void)popoverControllerDidDismissPopover:(id)popoverController
 {
     UIPopoverController* pc = (UIPopoverController*)popoverController;
-
+    
     [pc dismissPopoverAnimated:YES];
     pc.delegate = nil;
     if (self.pickerController && self.pickerController.callbackId && self.pickerController.pickerPopoverController) {
@@ -435,7 +472,7 @@ static NSString* toBase64(NSData* data) {
     CDVPluginResult* result = nil;
     BOOL saveToPhotoAlbum = options.saveToPhotoAlbum;
     UIImage* image = nil;
-
+    
     switch (options.destinationType) {
         case DestinationTypeNativeUri:
         {
@@ -499,7 +536,7 @@ static NSString* toBase64(NSData* data) {
         ALAssetsLibrary* library = [ALAssetsLibrary new];
         [library writeImageToSavedPhotosAlbum:image.CGImage orientation:(ALAssetOrientation)(image.imageOrientation) completionBlock:nil];
     }
-
+    
     completion(result);
 }
 
@@ -547,7 +584,7 @@ static NSString* toBase64(NSData* data) {
 - (void)imagePickerController:(UIImagePickerController*)picker didFinishPickingImage:(UIImage*)image editingInfo:(NSDictionary*)editingInfo
 {
     NSDictionary* imageInfo = [NSDictionary dictionaryWithObject:image forKey:UIImagePickerControllerOriginalImage];
-
+    
     [self imagePickerController:picker didFinishPickingMediaWithInfo:imageInfo];
 }
 
@@ -565,28 +602,28 @@ static NSString* toBase64(NSData* data) {
         } else {
             result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"no image selected"];
         }
-
+        
         
         [weakSelf.commandDelegate sendPluginResult:result callbackId:cameraPicker.callbackId];
         
         weakSelf.hasPendingOperation = NO;
         weakSelf.pickerController = nil;
     };
-
+    
     [[cameraPicker presentingViewController] dismissViewControllerAnimated:YES completion:invoke];
 }
 
 - (CLLocationManager*)locationManager
 {
-	if (locationManager != nil) {
-		return locationManager;
-	}
+    if (locationManager != nil) {
+        return locationManager;
+    }
     
-	locationManager = [[CLLocationManager alloc] init];
-	[locationManager setDesiredAccuracy:kCLLocationAccuracyNearestTenMeters];
-	[locationManager setDelegate:self];
+    locationManager = [[CLLocationManager alloc] init];
+    [locationManager setDesiredAccuracy:kCLLocationAccuracyNearestTenMeters];
+    [locationManager setDelegate:self];
     
-	return locationManager;
+    return locationManager;
 }
 
 - (void)locationManager:(CLLocationManager*)manager didUpdateToLocation:(CLLocation*)newLocation fromLocation:(CLLocation*)oldLocation
@@ -651,7 +688,7 @@ static NSString* toBase64(NSData* data) {
     if (locationManager == nil) {
         return;
     }
-
+    
     [self.locationManager stopUpdatingLocation];
     self.locationManager = nil;
     
@@ -729,7 +766,7 @@ static NSString* toBase64(NSData* data) {
 {
     return nil;
 }
-    
+
 - (void)viewWillAppear:(BOOL)animated
 {
     SEL sel = NSSelectorFromString(@"setNeedsStatusBarAppearanceUpdate");
