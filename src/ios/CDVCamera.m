@@ -229,6 +229,8 @@ static NSString* toBase64(NSData* data) {
         
         // Perform UI operations on the main thread
         dispatch_async(dispatch_get_main_queue(), ^{
+            
+#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_9_0
             // If a popover is already open, close it; we only want one at a time.
             if (([[weakSelf pickerController] pickerPopoverController] != nil) && [[[weakSelf pickerController] pickerPopoverController] isPopoverVisible]) {
                 [[[weakSelf pickerController] pickerPopoverController] dismissPopoverAnimated:YES];
@@ -236,12 +238,18 @@ static NSString* toBase64(NSData* data) {
                 [[weakSelf pickerController] setPickerPopoverController:nil];
             }
             
+#endif
+            
+            
             if ([weakSelf popoverSupported] && (pictureOptions.sourceType != UIImagePickerControllerSourceTypeCamera)) {
+                
+#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_9_0
                 if (cameraPicker.pickerPopoverController == nil) {
                     cameraPicker.pickerPopoverController = [[NSClassFromString(@"UIPopoverController") alloc] initWithContentViewController:cameraPicker];
                 }
                 [weakSelf displayPopover:pictureOptions.popoverOptions];
                 weakSelf.hasPendingOperation = NO;
+#endif
             } else {
                 [weakSelf.viewController presentViewController:cameraPicker animated:YES completion:^{
                     weakSelf.hasPendingOperation = NO;
@@ -319,11 +327,14 @@ static NSString* toBase64(NSData* data) {
         }
     }
     
+#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_9_0
+    
     [[[self pickerController] pickerPopoverController] setDelegate:self];
     [[[self pickerController] pickerPopoverController] presentPopoverFromRect:CGRectMake(x, y, width, height)
                                                                        inView:[self.webView superview]
                                                      permittedArrowDirections:arrowDirection
                                                                      animated:YES];
+#endif
 }
 
 - (void)navigationController:(UINavigationController *)navigationController willShowViewController:(UIViewController *)viewController animated:(BOOL)animated
@@ -372,6 +383,7 @@ static NSString* toBase64(NSData* data) {
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_9_0
 - (void)popoverControllerDidDismissPopover:(id)popoverController
 {
     
@@ -387,7 +399,7 @@ static NSString* toBase64(NSData* data) {
     }
     self.hasPendingOperation = NO;
 }
-
+#endif
 - (NSData*)processImage:(UIImage*)image info:(NSDictionary*)info options:(CDVPictureOptions*)options
 {
     NSData* data = nil;
@@ -617,14 +629,19 @@ static NSString* toBase64(NSData* data) {
         }
     };
     
+#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_9_0
     if (cameraPicker.pictureOptions.popoverSupported && (cameraPicker.pickerPopoverController != nil)) {
         [cameraPicker.pickerPopoverController dismissPopoverAnimated:YES];
         cameraPicker.pickerPopoverController.delegate = nil;
         cameraPicker.pickerPopoverController = nil;
         invoke();
-    } else {
+    }
+    else {
         [[cameraPicker presentingViewController] dismissViewControllerAnimated:YES completion:invoke];
     }
+#else
+    [[cameraPicker presentingViewController] dismissViewControllerAnimated:YES completion:invoke];
+#endif
 }
 
 // older api calls newer didFinishPickingMediaWithInfo
