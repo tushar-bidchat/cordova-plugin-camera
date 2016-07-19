@@ -21,8 +21,7 @@
 #import "CDVJpegHeaderWriter.h"
 #import "UIImage+CropScaleOrientation.h"
 #import <ImageIO/CGImageProperties.h>
-#import <AssetsLibrary/ALAssetRepresentation.h>
-#import <AssetsLibrary/AssetsLibrary.h>
+
 #import <AVFoundation/AVFoundation.h>
 #import <ImageIO/CGImageSource.h>
 #import <ImageIO/CGImageProperties.h>
@@ -32,6 +31,13 @@
 
 #ifndef __CORDOVA_4_0_0
 #import <Cordova/NSData+Base64.h>
+#endif
+
+#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_9_0
+#import <AssetsLibrary/ALAssetRepresentation.h>
+#import <AssetsLibrary/AssetsLibrary.h>
+#else
+#import <Photos/Photos.h>
 #endif
 
 #define CDV_PHOTO_PREFIX @"cdv_photo_"
@@ -368,6 +374,7 @@ static NSString* toBase64(NSData* data) {
 
 - (void)popoverControllerDidDismissPopover:(id)popoverController
 {
+    
     UIPopoverController* pc = (UIPopoverController*)popoverController;
     
     [pc dismissPopoverAnimated:YES];
@@ -482,8 +489,39 @@ static NSString* toBase64(NSData* data) {
             // In this case we must save image to device before obtaining an URI.
             if (url == nil) {
                 image = [self retrieveImage:info options:options];
+                
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_9_0
+                __block NSString* localId;
+                [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+                    PHAssetChangeRequest *assetChangeRequest = [PHAssetChangeRequest creationRequestForAssetFromImage:image];
+                    localId = [[assetChangeRequest placeholderForCreatedAsset] localIdentifier];
+                    
+                } completionHandler:^(BOOL success, NSError * _Nullable error) {
+                    
+                    if (error) {
+                        CDVPluginResult*  resultToReturn = [CDVPluginResult resultWithStatus:CDVCommandStatus_IO_EXCEPTION messageAsString:[error localizedDescription]];
+                        completion(resultToReturn);
+                    } else {
+                        
+                        PHFetchResult* assetResult = [PHAsset fetchAssetsWithLocalIdentifiers:@[localId] options:nil];
+                        PHAsset *asset = [assetResult firstObject];
+                        
+                        PHContentEditingInputRequestOptions *options = [[PHContentEditingInputRequestOptions alloc] init];
+                        [asset requestContentEditingInputWithOptions:options completionHandler:^(PHContentEditingInput *contentEditingInput, NSDictionary *info)
+                         {
+                             NSURL* url = contentEditingInput.fullSizeImageURL;
+                             NSString* nativeUri = [[self urlTransformer:url] absoluteString];
+                             CDVPluginResult* resultToReturn = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:nativeUri];
+                             completion (resultToReturn);
+                         }];
+                    }
+                }];
+                
+#else
                 ALAssetsLibrary* library = [ALAssetsLibrary new];
                 [library writeImageToSavedPhotosAlbum:image.CGImage orientation:(ALAssetOrientation)(image.imageOrientation) completionBlock:^(NSURL *assetURL, NSError *error) {
+                    
+                    
                     CDVPluginResult* resultToReturn = nil;
                     if (error) {
                         resultToReturn = [CDVPluginResult resultWithStatus:CDVCommandStatus_IO_EXCEPTION messageAsString:[error localizedDescription]];
@@ -493,6 +531,8 @@ static NSString* toBase64(NSData* data) {
                     }
                     completion(resultToReturn);
                 }];
+#endif
+                
                 return;
             } else {
                 NSString* nativeUri = [[self urlTransformer:url] absoluteString];
@@ -533,8 +573,15 @@ static NSString* toBase64(NSData* data) {
     };
     
     if (saveToPhotoAlbum && image) {
+        
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_9_0
+        [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+            [PHAssetChangeRequest creationRequestForAssetFromImage:image];
+        } completionHandler:nil];
+#else
         ALAssetsLibrary* library = [ALAssetsLibrary new];
         [library writeImageToSavedPhotosAlbum:image.CGImage orientation:(ALAssetOrientation)(image.imageOrientation) completionBlock:nil];
+#endif
     }
     
     completion(result);
@@ -595,6 +642,18 @@ static NSString* toBase64(NSData* data) {
     
     dispatch_block_t invoke = ^ (void) {
         CDVPluginResult* result;
+        
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_9_0
+        
+        if (picker.sourceType == UIImagePickerControllerSourceTypeCamera && [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo] != PHAuthorizationStatusAuthorized ) {
+            result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"has no access to camera"];
+        } else if (picker.sourceType != UIImagePickerControllerSourceTypeCamera && [PHPhotoLibrary authorizationStatus] != PHAuthorizationStatusAuthorized) {
+            result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"has no access to assets"];
+        } else {
+            result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"no image selected"];
+        }
+#else
+        
         if (picker.sourceType == UIImagePickerControllerSourceTypeCamera && [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo] != ALAuthorizationStatusAuthorized) {
             result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"has no access to camera"];
         } else if (picker.sourceType != UIImagePickerControllerSourceTypeCamera && [ALAssetsLibrary authorizationStatus] != ALAuthorizationStatusAuthorized) {
@@ -602,7 +661,7 @@ static NSString* toBase64(NSData* data) {
         } else {
             result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"no image selected"];
         }
-        
+#endif
         
         [weakSelf.commandDelegate sendPluginResult:result callbackId:cameraPicker.callbackId];
         
@@ -748,8 +807,16 @@ static NSString* toBase64(NSData* data) {
     self.metadata = nil;
     
     if (options.saveToPhotoAlbum) {
+        
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_9_0
+        [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+            [PHAssetChangeRequest creationRequestForAssetFromImage:[UIImage imageWithData:self.data]];
+        } completionHandler:nil];
+#else
+        
         ALAssetsLibrary *library = [ALAssetsLibrary new];
         [library writeImageDataToSavedPhotosAlbum:self.data metadata:self.metadata completionBlock:nil];
+#endif
     }
 }
 
